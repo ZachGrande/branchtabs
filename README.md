@@ -2,6 +2,18 @@
 
 This is the README for your extension "branchtabs". After writing up a brief description, we recommend including the following sections.
 
+## Guide
+
+<https://code.visualstudio.com/api/get-started/your-first-extension>
+
+[UX Guidelines](https://code.visualstudio.com/api/ux-guidelines/overview)
+
+[Testing Extensions](https://code.visualstudio.com/api/working-with-extensions/testing-extension)
+
+## Run in Debug mode
+
+CMD + F5 or `Debug: Start Debugging`
+
 ## Features
 
 Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
