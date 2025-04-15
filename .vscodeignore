@@ -10,5 +10,6 @@ vsc-extension-quickstart.md
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
+**/*.js.map # might not be needed
 **/*.ts
 **/.vscode-test.*
