@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import * as path from 'path';
+import { suite, test } from 'node:test';
 import { buildTabState, isInsideRepo, uniqueInOrder } from '../tabState';
 
 suite('tabState', () => {

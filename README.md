@@ -49,11 +49,13 @@ Open the **Output** panel and select **Branch Tabs** to see a timestamped log of
 
 ## Development
 
+Development requires Node.js 22 or later. Unit tests use the built-in Node.js test runner; integration tests run in a VS Code extension host.
+
 ```sh
 npm install
 npm run compile   # type-check and build to out/
 npm run lint
-npm test          # unit + integration tests in a VS Code instance against a temporary git repository
+npm test          # unit tests + integration tests against a temporary git repository
 ```
 
 Press `F5` in VS Code to launch an Extension Development Host with the extension loaded.

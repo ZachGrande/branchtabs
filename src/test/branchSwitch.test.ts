@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { after, before, suite, test } from 'node:test';
 import * as vscode from 'vscode';
 import { BranchTabsManager, DISCARD_ALL, SAVE_ALL } from '../BranchTabsManager';
 import type { GitExtension, Repository } from '../git';
@@ -75,7 +76,7 @@ function sameItems(expected: string[]): () => boolean {
 }
 
 suite('Branch switching', () => {
-	suiteSetup(async () => {
+	before(async () => {
 		const ext = vscode.extensions.all.find(e => e.packageJSON.name === 'branch-tabs');
 		assert.ok(ext, 'extension under test not found');
 		await ext.activate();
@@ -89,7 +90,7 @@ suite('Branch switching', () => {
 		await settle();
 	});
 
-	test('a branch without saved tabs keeps the current tabs', async () => {
+	test('a branch without saved tabs keeps the current tabs', { timeout: 60000 }, async () => {
 		await open('a.txt', 'b.txt');
 		await settle();
 
@@ -98,14 +99,14 @@ suite('Branch switching', () => {
 		assert.deepStrictEqual(repoTabNames(), ['a.txt', 'b.txt']);
 	});
 
-	test('returning to a branch restores its tabs in order with the same active tab', async () => {
+	test('returning to a branch restores its tabs in order with the same active tab', { timeout: 60000 }, async () => {
 		// feature: c, a (a active)
 		await closeAllEditors();
 		await open('c.txt', 'a.txt');
 		await settle();
 
 		await checkout('main');
-		await waitFor('main tabs restored', sameItems(['a.txt', 'b.txt']));
+		await waitFor('main tabs and active file restored', () => sameItems(['a.txt', 'b.txt'])() && activeTabName() === 'b.txt');
 		assert.strictEqual(activeTabName(), 'b.txt');
 
 		// main: b, c, a with c active
@@ -114,36 +115,41 @@ suite('Branch switching', () => {
 		await settle();
 
 		await checkout('feature');
-		await waitFor('feature tabs restored', sameItems(['c.txt', 'a.txt']));
+		await waitFor('feature tabs and active file restored', () => sameItems(['c.txt', 'a.txt'])() && activeTabName() === 'a.txt');
 		assert.strictEqual(activeTabName(), 'a.txt');
 
 		await checkout('main');
-		await waitFor('main tabs restored again', sameItems(['b.txt', 'c.txt', 'a.txt']));
+		await waitFor('main tabs and active file restored again', () => sameItems(['b.txt', 'c.txt', 'a.txt'])() && activeTabName() === 'c.txt');
 		assert.strictEqual(activeTabName(), 'c.txt');
 	});
 
-	test('non-file and out-of-repo tabs are left open', async () => {
-		const outside = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'branch-tabs-outside-')), 'outside.txt');
-		fs.writeFileSync(outside, 'outside\n');
-		await vscode.window.showTextDocument(vscode.Uri.file(outside), { preview: false });
-		const untitled = await vscode.workspace.openTextDocument({ content: 'scratch' });
-		await vscode.window.showTextDocument(untitled, { preview: false });
-		await settle();
+	test('non-file and out-of-repo tabs are left open', { timeout: 60000 }, async () => {
+		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-tabs-outside-'));
+		try {
+			const outside = path.join(outsideDir, 'outside.txt');
+			fs.writeFileSync(outside, 'outside\n');
+			await vscode.window.showTextDocument(vscode.Uri.file(outside), { preview: false });
+			const untitled = await vscode.workspace.openTextDocument({ content: 'scratch' });
+			await vscode.window.showTextDocument(untitled, { preview: false });
+			await settle();
 
-		await checkout('feature');
-		await waitFor('feature tabs restored', sameItems(['c.txt', 'a.txt']));
-		const openUris = fileTabs().map(input => input.uri.toString());
-		assert.ok(openUris.includes(vscode.Uri.file(outside).toString()), 'out-of-repo tab was closed');
-		assert.ok(openUris.includes(untitled.uri.toString()), 'untitled tab was closed');
+			await checkout('feature');
+			await waitFor('feature tabs restored', sameItems(['c.txt', 'a.txt']));
+			const openUris = fileTabs().map(input => input.uri.toString());
+			assert.ok(openUris.includes(vscode.Uri.file(outside).toString()), 'out-of-repo tab was closed');
+			assert.ok(openUris.includes(untitled.uri.toString()), 'untitled tab was closed');
 
-		await vscode.window.showTextDocument(untitled);
-		await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
-		await checkout('main');
-		await waitFor('main tabs restored', sameItems(['b.txt', 'c.txt', 'a.txt']));
-		await closeAllEditors();
+			await vscode.window.showTextDocument(untitled);
+			await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+			await checkout('main');
+			await waitFor('main tabs restored', sameItems(['b.txt', 'c.txt', 'a.txt']));
+			await closeAllEditors();
+		} finally {
+			fs.rmSync(outsideDir, { recursive: true, force: true });
+		}
 	});
 
-	test('files missing on the branch are skipped', async () => {
+	test('files missing on the branch are skipped', { timeout: 60000 }, async () => {
 		fs.writeFileSync(path.join(repoRoot, 'scratch.txt'), 'scratch\n');
 		await open('a.txt', 'scratch.txt');
 		await settle();
@@ -156,7 +162,7 @@ suite('Branch switching', () => {
 		await waitFor('main tabs restored without scratch.txt', sameItems(['a.txt']));
 	});
 
-	test('switches tabs on startup when the branch changed while VS Code was closed', async () => {
+	test('switches tabs on startup when the branch changed while VS Code was closed', { timeout: 60000 }, async () => {
 		const current = repo.state.HEAD!.name!;
 		const previous = current === 'main' ? 'feature' : 'main';
 		const repoPath = repo.rootUri.fsPath;
@@ -193,14 +199,14 @@ suite('Branch switching', () => {
 		let answer: string | undefined;
 		let prompts = 0;
 
-		suiteSetup(() => {
+		before(() => {
 			(vscode.window as { showWarningMessage: unknown }).showWarningMessage = async () => {
 				prompts++;
 				return answer;
 			};
 		});
 
-		suiteTeardown(() => {
+		after(() => {
 			(vscode.window as { showWarningMessage: unknown }).showWarningMessage = original;
 		});
 
@@ -212,7 +218,7 @@ suite('Branch switching', () => {
 			return editor.document;
 		}
 
-		test('Cancel leaves the tabs untouched', async () => {
+		test('Cancel leaves the tabs untouched', { timeout: 60000 }, async () => {
 			answer = undefined;
 			prompts = 0;
 			await closeAllEditors();
@@ -226,7 +232,7 @@ suite('Branch switching', () => {
 			assert.ok(doc.isDirty, 'unsaved changes were lost');
 		});
 
-		test('Discard All reverts unsaved files and switches tabs', async () => {
+		test('Discard All reverts unsaved files and switches tabs', { timeout: 60000 }, async () => {
 			// After Cancel we're on feature with a dirty a.txt; reset feature's tabs to [b.txt].
 			await vscode.commands.executeCommand('workbench.action.files.revert');
 			await closeAllEditors();
@@ -249,7 +255,7 @@ suite('Branch switching', () => {
 			assert.ok(!a?.isDirty, 'a.txt is still dirty');
 		});
 
-		test('Save All saves unsaved files and switches tabs', async () => {
+		test('Save All saves unsaved files and switches tabs', { timeout: 60000 }, async () => {
 			const notes = path.join(repoRoot, 'notes.txt');
 			fs.writeFileSync(notes, 'notes\n');
 			await makeDirty('notes.txt');
