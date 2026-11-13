@@ -1,64 +1,63 @@
 # Branch Tabs
 
-Remembers which files you had open on each git branch and restores them when you switch back.
+Remembers which files you had open on each git branch and reopens them when you switch back.
 
 ## How It Works
 
-Branch Tabs silently tracks the files you have open in VS Code per git branch. When you switch branches — whether via the VS Code UI, a terminal, or any other tool — the extension:
+Branch Tabs tracks the files you have open in VS Code for each git branch. When you switch branches, whether from the VS Code UI, a terminal, or another tool, the extension:
 
-1. Saves the current set of open tabs (and which one is active) to the branch you're leaving.
-2. Closes all open tabs.
-3. Reopens the tabs that were saved for the branch you're switching to.
+1. Saves the open file tabs (their order and which one was active) for the branch you're leaving.
+2. If the branch you're switching to has saved tabs, closes the current file tabs and reopens that branch's tabs in the same order, re-focusing the file that was active.
+3. If the branch you're switching to has no saved tabs yet (for example, a branch you just created), leaves your tabs as they are and remembers them for that branch.
 
-State is persisted in VS Code's workspace storage, so your tab sets survive editor restarts.
+Tab state is stored in VS Code's workspace storage, so it survives restarts. If the branch changed while VS Code was closed, your tabs are switched the next time the workspace opens.
 
-## Features
+## What Gets Swapped
 
-- **Automatic save** — tab state is written whenever tabs change (debounced to avoid excessive writes).
-- **Automatic restore** — tabs are restored every time the git branch changes, including checkouts made in a terminal outside of VS Code.
-- **Active tab tracking** — the file that had focus on the previous visit is re-focused when you return to a branch.
-- **Unsaved file handling** — if you have unsaved changes when switching branches, you're prompted to save all, discard all, or cancel the tab switch.
-- **New branch support** — on a branch with no saved state, the current open tabs are snapshotted as the starting state for that branch.
-- **Output log** — a "Branch Tabs" output channel provides a timestamped trace of all extension activity for easy debugging.
+- **Swapped:** text file tabs for files inside the repository.
+- **Left alone:** everything else, including files outside the repository, untitled files, diffs, Settings, Markdown previews, webviews and other non-text editors.
+- Files that don't exist on the branch you switch to are skipped.
+
+## Unsaved Changes
+
+If any of the file tabs that would be closed have unsaved changes, you're asked what to do:
+
+- **Save All**: save those files, then switch tabs (if a save fails, your tabs are left as they are).
+- **Discard All**: revert those files, then switch tabs.
+- **Cancel**: keep your current tabs open. They become the saved tabs for the new branch.
 
 ## Requirements
 
 - VS Code 1.109.0 or later.
-- The built-in [Git extension](https://marketplace.visualstudio.com/items?itemName=vscode.git) must be enabled (it is by default).
+- The built-in Git extension must be enabled (it is by default).
 - Your workspace must be a git repository.
 
 ## Extension Settings
 
-This extension does not contribute any configurable settings.
+This extension does not contribute any settings.
 
 ## Known Limitations
 
-- Only the first repository is tracked in multi-root workspaces that contain multiple git repositories.
-- Only plain text file tabs (`file://` URIs) are saved and restored. Tabs such as diff views, notebooks, Settings UI, or extension output panels are not persisted.
+- Only the first git repository in a workspace is tracked.
+- Restored tabs open in the active editor group; split-editor layouts and pinned state are not restored.
+- Tab order assumes the default `workbench.editor.openPositioning` setting (`right`).
+- Detached HEAD states (e.g. during a rebase or bisect) are ignored until you're back on a branch.
 
-## Release Notes
+## Troubleshooting
 
-### 0.0.1
+Open the **Output** panel and select **Branch Tabs** to see a timestamped log of what the extension is doing.
 
-Initial release.
+## Development
 
-## Following extension guidelines
+```sh
+npm install
+npm run compile   # type-check and build to out/
+npm run lint
+npm test          # unit + integration tests in a VS Code instance against a temporary git repository
+```
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+Press `F5` in VS Code to launch an Extension Development Host with the extension loaded.
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+## License
 
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+[MIT](LICENSE)
