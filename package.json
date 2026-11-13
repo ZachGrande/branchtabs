@@ -3,11 +3,29 @@
   "displayName": "Branch Tabs",
   "description": "Remembers which files you had open on each git branch and restores them when you switch back",
   "version": "0.0.1",
+  "publisher": "TODO-publisher-id",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZachGrande/branchtabs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ZachGrande/branchtabs/issues"
+  },
+  "homepage": "https://github.com/ZachGrande/branchtabs#readme",
   "engines": {
     "vscode": "^1.109.0"
   },
   "categories": [
     "Other"
+  ],
+  "keywords": [
+    "git",
+    "branch",
+    "tabs",
+    "editors",
+    "workspace",
+    "session"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -16,23 +34,20 @@
     "vscode.git"
   ],
   "main": "./out/extension.js",
-  "contributes": {},
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "node --test out/test/tabState.test.js && node out/test/runIntegration.js"
   },
   "devDependencies": {
-    "@types/vscode": "^1.109.0",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "typescript-eslint": "^8.54.0",
-    "eslint": "^9.39.2",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "^1.146.0",
+    "@vscode/test-electron": "^3.1.0",
+    "eslint": "^9.39.5",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.72.2"
   }
 }
