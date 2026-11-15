@@ -237,10 +237,14 @@ suite('Branch switching', () => {
 		const previous = current === 'main' ? 'feature' : 'main';
 		const repoPath = repo.rootUri.fsPath;
 		const fileUri = (name: string) => vscode.Uri.file(path.join(repoRoot, name)).toString();
+		const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-tabs-legacy-'));
+		const outsidePath = path.join(outsideDir, 'outside.txt');
+		fs.writeFileSync(outsidePath, 'outside\n');
+		const outsideUri = vscode.Uri.file(outsidePath).toString();
 
 		const store = new Map<string, unknown>([
 			[lastBranchKey(repoPath), previous],
-			[stateKey(repoPath, current), { uris: [fileUri('b.txt')], activeUri: fileUri('b.txt') }],
+			[stateKey(repoPath, current), { uris: [outsideUri, fileUri('b.txt')], activeUri: outsideUri }],
 		]);
 		const context = {
 			workspaceState: {
@@ -263,11 +267,16 @@ suite('Branch switching', () => {
 			await manager.init();
 			await waitFor('startup branch switch to complete', () => switched);
 			assert.deepStrictEqual(repoTabNames(), ['b.txt']);
+			assert.ok(!fileTabs().some(input => input.uri.toString() === outsideUri), 'legacy out-of-repo tab was restored');
+			assert.notStrictEqual(vscode.window.tabGroups.activeTabGroup.activeTab?.input instanceof vscode.TabInputText
+				? vscode.window.tabGroups.activeTabGroup.activeTab.input.uri.toString()
+				: undefined, outsideUri, 'legacy out-of-repo active tab was focused');
 			assert.deepStrictEqual(store.get(stateKey(repoPath, previous)) as TabState, { uris: [fileUri('a.txt')], activeUri: fileUri('a.txt') });
 			assert.strictEqual(store.get(lastBranchKey(repoPath)), current);
 		} finally {
 			hook.dispose();
 			manager.dispose();
+			fs.rmSync(outsideDir, { recursive: true, force: true });
 		}
 	});
 
@@ -343,6 +352,40 @@ suite('Branch switching', () => {
 			await waitFor('main tabs restored', sameItems(['a.txt']));
 			assert.strictEqual(prompts, 1);
 			assert.strictEqual(fs.readFileSync(notes, 'utf8'), 'unsaved notes\n');
+		});
+
+		test('queues a return to the original branch while a switch prompt is pending', { timeout: 60000 }, async () => {
+			const current = repo.state.HEAD!.name!;
+			const next = current === 'main' ? 'feature' : 'main';
+			await closeAllEditors();
+			await makeDirty('a.txt');
+
+			let beginPrompt!: () => void;
+			let releasePrompt!: (choice: string | undefined) => void;
+			let firstPrompt = true;
+			const promptStarted = new Promise<void>(resolve => { beginPrompt = resolve; });
+			(vscode.window as { showWarningMessage: unknown }).showWarningMessage = async () => {
+				if (firstPrompt) {
+					firstPrompt = false;
+					beginPrompt();
+					return new Promise<string | undefined>(resolve => { releasePrompt = resolve; });
+				}
+				return undefined;
+			};
+
+			completedBranch = undefined;
+			git('checkout', '-q', next);
+			await repo.status();
+			await promptStarted;
+
+			git('checkout', '-q', current);
+			await repo.status();
+			await waitFor(`HEAD to return to ${current}`, () => repo.state.HEAD?.name === current);
+			releasePrompt(undefined);
+			await waitFor(`pending switch to settle on ${current}`, () => completedBranch === current);
+			assert.strictEqual(repo.state.HEAD?.name, current);
+			await vscode.commands.executeCommand('workbench.action.files.revert');
+			await closeAllEditors();
 		});
 	});
 });
