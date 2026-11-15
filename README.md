@@ -28,7 +28,7 @@ If any of the file tabs that would be closed have unsaved changes, you're asked 
 
 ## Requirements
 
-- VS Code 1.109.0 or later.
+- VS Code 1.146.0 or later.
 - The built-in Git extension must be enabled (it is by default).
 - Your workspace must be a git repository.
 
