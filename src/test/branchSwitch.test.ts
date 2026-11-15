@@ -134,13 +134,15 @@ suite('Branch switching', () => {
 			await settle();
 
 			await checkout('feature');
-			await waitFor('feature tabs restored', sameItems(['c.txt', 'a.txt']));
+			await waitFor('feature tabs and active file restored', () => sameItems(['c.txt', 'a.txt'])() && activeTabName() === 'a.txt');
 			const openUris = fileTabs().map(input => input.uri.toString());
 			assert.ok(openUris.includes(vscode.Uri.file(outside).toString()), 'out-of-repo tab was closed');
 			assert.ok(openUris.includes(untitled.uri.toString()), 'untitled tab was closed');
 
 			await vscode.window.showTextDocument(untitled);
+			await waitFor('untitled editor focused', () => vscode.window.activeTextEditor?.document.uri.toString() === untitled.uri.toString());
 			await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+			assert.deepStrictEqual(repoTabNames(), ['c.txt', 'a.txt'], 'closing the untitled editor must not close a repository tab');
 			await checkout('main');
 			await waitFor('main tabs restored', sameItems(['b.txt', 'c.txt', 'a.txt']));
 			await closeAllEditors();
