@@ -7,27 +7,44 @@ import { after, before, suite, test } from 'node:test';
 import * as vscode from 'vscode';
 import { BranchTabsManager, DISCARD_ALL, SAVE_ALL } from '../BranchTabsManager';
 import type { GitExtension, Repository } from '../git';
-import { TabState, lastBranchKey, stateKey } from '../tabState';
+import { TabState, buildTabState, isInsideRepo, lastBranchKey, stateKey } from '../tabState';
 
 const repoRoot = vscode.workspace.workspaceFolders![0].uri.fsPath;
-const DEBOUNCE_WAIT_MS = 800;
+const changes = new vscode.EventEmitter<void>();
+const hooks: vscode.Disposable[] = [];
+const savedTabs = new Map<string, TabState>();
+let completedBranch: string | undefined;
 
 function git(...args: string[]): void {
 	execFileSync('git', args, { cwd: repoRoot, stdio: 'ignore' });
 }
 
-function sleep(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function waitFor(description: string, condition: () => boolean, timeoutMs = 10000): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (!condition()) {
-		if (Date.now() > deadline) {
-			assert.fail(`Timed out waiting for: ${description} (HEAD=${repo?.state.HEAD?.name}, tabs=${JSON.stringify(repoTabNames())})`);
-		}
-		await sleep(100);
-	}
+function waitFor(description: string, condition: () => boolean, timeoutMs = 10000): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const finish = (error?: Error) => {
+			clearTimeout(timer);
+			hook.dispose();
+			if (error) {
+				reject(error);
+			} else {
+				resolve();
+			}
+		};
+		const check = () => {
+			try {
+				if (condition()) {
+					finish();
+				}
+			} catch (error) {
+				finish(error instanceof Error ? error : new Error(String(error)));
+			}
+		};
+		const timer = setTimeout(() => {
+			finish(new Error(`Timed out waiting for: ${description} (HEAD=${repo?.state.HEAD?.name}, tabs=${JSON.stringify(repoTabNames())})`));
+		}, timeoutMs);
+		const hook = changes.event(check);
+		check();
+	});
 }
 
 function fileTabs(): vscode.TabInputText[] {
@@ -62,13 +79,22 @@ async function closeAllEditors(): Promise<void> {
 let repo: Repository;
 
 async function checkout(branch: string): Promise<void> {
+	completedBranch = undefined;
 	git('checkout', '-q', branch);
-	await waitFor(`HEAD to become ${branch}`, () => repo.state.HEAD?.name === branch);
+	// Refresh the Git API after the external checkout instead of waiting for filesystem watchers.
+	await repo.status();
+	await waitFor(`branch switch to ${branch} to complete`, () => repo.state.HEAD?.name === branch && completedBranch === branch);
 }
 
-/** Lets the debounced tab save run so the current layout is recorded for the current branch. */
+/** Waits for persistence of the current layout, not merely a tab-change notification. */
 function settle(): Promise<void> {
-	return sleep(DEBOUNCE_WAIT_MS);
+	const uris = fileTabs()
+		.filter(input => input.uri.scheme === 'file' && isInsideRepo(input.uri.fsPath, repoRoot))
+		.map(input => input.uri.toString());
+	const active = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+	const expected = buildTabState(uris, active instanceof vscode.TabInputText ? active.uri.toString() : null);
+	const key = stateKey(repo.rootUri.fsPath, repo.state.HEAD!.name!);
+	return waitFor('current tab layout to be saved', () => JSON.stringify(savedTabs.get(key)) === JSON.stringify(expected));
 }
 
 function sameItems(expected: string[]): () => boolean {
@@ -79,15 +105,58 @@ suite('Branch switching', () => {
 	before(async () => {
 		const ext = vscode.extensions.all.find(e => e.packageJSON.name === 'branch-tabs');
 		assert.ok(ext, 'extension under test not found');
-		await ext.activate();
+		const manager = await vscode.extensions.getExtension<BranchTabsManager>(ext.id)!.activate();
+		hooks.push(
+			manager.onDidSaveTabs(({ repoPath, branchName, state }) => {
+				savedTabs.set(stateKey(repoPath, branchName), state);
+				changes.fire();
+			}),
+			manager.onDidSwitchBranch(({ repoPath, branchName }) => {
+				if (repoPath === repo?.rootUri.fsPath) {
+					completedBranch = branchName;
+				}
+				changes.fire();
+			}),
+			vscode.window.tabGroups.onDidChangeTabs(() => changes.fire()),
+			vscode.window.tabGroups.onDidChangeTabGroups(() => changes.fire()),
+			vscode.window.onDidChangeActiveTextEditor(() => changes.fire()),
+		);
 
 		const gitExt = vscode.extensions.getExtension<GitExtension>('vscode.git')!;
 		const api = (await gitExt.activate()).getAPI(1);
+		hooks.push(api.onDidOpenRepository(() => changes.fire()));
 		await waitFor('git repository to open', () => api.repositories.length > 0);
 		repo = api.repositories[0];
+		hooks.push(repo.state.onDidChange(() => changes.fire()));
 		await waitFor('HEAD to be main', () => repo.state.HEAD?.name === 'main');
 		await closeAllEditors();
-		await settle();
+	});
+
+	after(() => {
+		hooks.forEach(hook => hook.dispose());
+		changes.dispose();
+	});
+
+	suite('completion hooks', () => {
+		test('continues immediately when already ready', async () => {
+			await waitFor('already ready', () => true, 0);
+		});
+
+		test('rechecks readiness on a hook notification', async () => {
+			let ready = false;
+			let finished = false;
+			const waiting = waitFor('hook notification', () => ready).then(() => { finished = true; });
+			changes.fire();
+			await Promise.resolve();
+			assert.strictEqual(finished, false, 'unrelated events must not finish the wait');
+			ready = true;
+			changes.fire();
+			await waiting;
+		});
+
+		test('fails with diagnostics when completion never arrives', async () => {
+			await assert.rejects(waitFor('missing completion', () => false, 0), /Timed out waiting for: missing completion \(HEAD=.*, tabs=/);
+		});
 	});
 
 	test('a branch without saved tabs keeps the current tabs', { timeout: 60000 }, async () => {
@@ -95,7 +164,6 @@ suite('Branch switching', () => {
 		await settle();
 
 		await checkout('feature');
-		await sleep(DEBOUNCE_WAIT_MS);
 		assert.deepStrictEqual(repoTabNames(), ['a.txt', 'b.txt']);
 	});
 
@@ -186,12 +254,19 @@ suite('Branch switching', () => {
 		await settle();
 
 		const manager = new BranchTabsManager(context);
+		let switched = false;
+		const hook = manager.onDidSwitchBranch(() => {
+			switched = true;
+			changes.fire();
+		});
 		try {
 			await manager.init();
-			await waitFor('current branch tabs restored', sameItems(['b.txt']));
+			await waitFor('startup branch switch to complete', () => switched);
+			assert.deepStrictEqual(repoTabNames(), ['b.txt']);
 			assert.deepStrictEqual(store.get(stateKey(repoPath, previous)) as TabState, { uris: [fileUri('a.txt')], activeUri: fileUri('a.txt') });
-			await waitFor('last branch updated', () => store.get(lastBranchKey(repoPath)) === current);
+			assert.strictEqual(store.get(lastBranchKey(repoPath)), current);
 		} finally {
+			hook.dispose();
 			manager.dispose();
 		}
 	});
@@ -228,8 +303,7 @@ suite('Branch switching', () => {
 			await settle();
 
 			await checkout('feature');
-			await waitFor('prompt shown', () => prompts === 1);
-			await sleep(DEBOUNCE_WAIT_MS);
+			assert.strictEqual(prompts, 1);
 			assert.deepStrictEqual(repoTabNames(), ['a.txt']);
 			assert.ok(doc.isDirty, 'unsaved changes were lost');
 		});

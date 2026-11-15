@@ -8,6 +8,12 @@ export const SAVE_ALL = 'Save All';
 export const DISCARD_ALL = 'Discard All';
 
 export class BranchTabsManager implements vscode.Disposable {
+    private readonly tabsSaved = new vscode.EventEmitter<{ repoPath: string; branchName: string; state: TabState }>();
+    private readonly branchSwitched = new vscode.EventEmitter<{ repoPath: string; branchName: string }>();
+    /** Fires after the tab layout has been persisted. */
+    readonly onDidSaveTabs = this.tabsSaved.event;
+    /** Fires after switching (or adopting the current tabs) and persisting the new branch. */
+    readonly onDidSwitchBranch = this.branchSwitched.event;
     private readonly context: vscode.ExtensionContext;
     private readonly output: vscode.OutputChannel;
     private repoPath: string | null = null;
@@ -22,7 +28,7 @@ export class BranchTabsManager implements vscode.Disposable {
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
         this.output = vscode.window.createOutputChannel('Branch Tabs');
-        this.disposables.push(this.output);
+        this.disposables.push(this.output, this.tabsSaved, this.branchSwitched);
     }
 
     private log(msg: string): void {
@@ -151,6 +157,7 @@ export class BranchTabsManager implements vscode.Disposable {
         } finally {
             this.switching = false;
         }
+        this.branchSwitched.fire({ repoPath, branchName: newBranch });
     }
 
     /** Returns the URI of a tab this extension manages: a text file inside the repository. */
@@ -177,6 +184,7 @@ export class BranchTabsManager implements vscode.Disposable {
         const state = buildTabState(uris, activeUri);
         await this.context.workspaceState.update(stateKey(repoPath, branchName), state);
         this.log(`Saved ${state.uris.length} tab(s) for "${branchName}".`);
+        this.tabsSaved.fire({ repoPath, branchName, state });
     }
 
     /** Prompts about unsaved tabs that would be closed. Returns false if the user cancels. */

@@ -58,6 +58,8 @@ npm run lint
 npm test          # unit tests + integration tests against a temporary git repository
 ```
 
+Integration specs wait on Git/editor events and the manager's save/switch completion hooks rather than fixed sleeps. Checkout helpers refresh Git state after external checkouts; wait timeouts are failure guards, not minimum delays. The production tab-save debounce remains unchanged.
+
 Press `F5` in VS Code to launch an Extension Development Host with the extension loaded.
 
 ## License

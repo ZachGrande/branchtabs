@@ -17,6 +17,7 @@ export interface RepositoryState {
 export interface Repository {
 	readonly rootUri: Uri;
 	readonly state: RepositoryState;
+	status(): Promise<void>;
 	/** Fires whenever the repository has been checked out to a different branch. */
 	readonly onDidCheckout: Event<void>;
 }
