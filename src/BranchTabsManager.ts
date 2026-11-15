@@ -233,6 +233,10 @@ export class BranchTabsManager implements vscode.Disposable {
         let activeOpened = false;
         for (const uriString of state.uris) {
             const uri = vscode.Uri.parse(uriString);
+            if (uri.scheme !== 'file' || !isInsideRepo(uri.fsPath, repoPath)) {
+                this.log(`  Skipping untracked saved URI: ${uriString}`);
+                continue;
+            }
             try {
                 await vscode.workspace.fs.stat(uri);
             } catch {
