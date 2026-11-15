@@ -95,11 +95,7 @@ export class BranchTabsManager implements vscode.Disposable {
             vscode.window.tabGroups.onDidChangeTabs(() => this.scheduleSave()),
             vscode.window.tabGroups.onDidChangeTabGroups(() => this.scheduleSave()),
             // Fires on any HEAD change, including checkouts made from a terminal.
-            repo.state.onDidChange(() => {
-                if ((repo.state.HEAD?.name ?? null) !== this.currentBranch) {
-                    this.enqueueSync(repo);
-                }
-            }),
+            repo.state.onDidChange(() => this.enqueueSync(repo)),
             repo.onDidCheckout(() => this.enqueueSync(repo)),
         );
         this.enqueueSync(repo);
